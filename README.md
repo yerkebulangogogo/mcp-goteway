@@ -4,22 +4,19 @@ A reverse proxy for [Model Context Protocol](https://modelcontextprotocol.io) se
 
 ```
                     ┌─────────────────────────────────┐
-Claude Desktop ─────┤                                 ├──── context7   (npx)
-Cursor         ─────┤      MCP Gateway                ├──── filesystem (npx)
-VS Code        ─────┤      (STDIO or SSE/HTTP)        ├──── your-api   (stdio)
+Claude Desktop ─────┤                                 ├──── context7      (npx)
+LM Studio      ─────┤        MCP Gateway              ├──── filesystem    (npx)
+Cursor         ─────┤       (STDIO or SSE)            ├──── your-api      (stdio)
 any MCP client ─────┤                                 ├──── any MCP server
                     └─────────────────────────────────┘
 ```
 
-**Two modes:**
-- **STDIO** — runs as a local subprocess, perfect for Claude Desktop
-- **SSE** — runs as an HTTP server (`http://your-server:8080/sse`), any MCP client connects remotely
-
 ## Features
 
 - **Two transport modes** — STDIO for local use, SSE/HTTP for shared remote access
-- **Aggregation** — Tools, Resources, and Prompts from all servers appear as one
+- **Aggregation** — Tools, Resources, and Prompts from all servers in one place
 - **Namespacing** — `server__tool_name` prevents collisions across servers
+- **Tool filtering** — per-server `allow` / `deny` lists to control what the LLM sees
 - **Circuit Breaker** — automatic failover when a downstream server goes down
 - **Configurable timeouts** — per-server connect and call deadlines
 - **Hot reload** — add/remove servers with `kill -HUP` without restarting
@@ -37,74 +34,62 @@ any MCP client ─────┤                                 ├───�
 
 ## Quick Start
 
-### 1. Clone and build
-
 ```bash
 git clone https://github.com/yerkebulangogogo/mcp-goteway
-cd mcp-gateway
+cd mcp-goteway
 make build
 ```
 
-### 2. Configure
-
-Edit `config.yaml` (see [Configuration](#configuration) below).
-
-### 3. Run
+Edit `config.yaml`, then connect to your LLM client:
 
 ```bash
-# Run directly
-make run
-
-# Or with a custom config path
-./bin/mcp-gateway --config /path/to/config.yaml
+make install       # Claude Desktop — builds binary + writes config automatically
 ```
-
-### 4. Connect to Claude Desktop
-
-```bash
-make install
-```
-
-This builds the binary and writes the Claude Desktop config automatically. Restart Claude Desktop to apply.
-
-> To preview the config without writing it: `make claude-config`
 
 ---
 
 ## Modes
 
-### STDIO mode (local, Claude Desktop)
+### STDIO — local, Claude Desktop / LM Studio
 
-The gateway runs as a subprocess. Claude Desktop spawns it and communicates over stdin/stdout. This is the default.
+The gateway runs as a subprocess. The LLM client spawns it and communicates over stdin/stdout.
 
 ```yaml
 gateway:
-  mode: stdio
+  mode: stdio      # default
 ```
 
-```bash
-make install   # builds binary + writes Claude Desktop config automatically
+**Claude Desktop** — `make install` writes the config automatically.
+
+**LM Studio** — add to `~/.lmstudio/mcp.json`:
+```json
+{
+  "mcpServers": {
+    "mcp-gateway": {
+      "command": "/path/to/mcp-gateway/bin/mcp-gateway",
+      "args": ["--config", "/path/to/mcp-gateway/config.yaml"]
+    }
+  }
+}
 ```
 
-### SSE mode (remote, shared team server)
+### SSE — remote, shared team server
 
-The gateway runs as an HTTP server. Any MCP client can connect to it from anywhere.
+The gateway runs as an HTTP server. Any MCP client connects to it over the network.
 
 ```yaml
 gateway:
   mode: sse
   addr: ":8080"
-  base_url: "http://your-server.com:8080"  # public URL clients will use
+  base_url: "http://your-server.com:8080"
 ```
 
 ```bash
 ./bin/mcp-gateway --config config.yaml
-# → mcp-gateway ready, serving on SSE  addr=:8080  base_url=http://your-server.com:8080
+# → mcp-gateway ready, serving on SSE  addr=:8080
 ```
 
-Clients connect to: `http://your-server.com:8080/sse`
-
-**Claude Desktop (SSE mode):**
+**Claude Desktop (SSE):**
 ```json
 {
   "mcpServers": {
@@ -115,8 +100,9 @@ Clients connect to: `http://your-server.com:8080/sse`
 }
 ```
 
-**Cursor / VS Code:**  
-Add `http://your-server.com:8080/sse` as an MCP server URL in settings.
+**LM Studio (SSE)** — add URL `http://your-server.com:8080/sse` in MCP settings.
+
+**Cursor / VS Code** — add `http://your-server.com:8080/sse` as MCP server URL.
 
 ---
 
@@ -125,31 +111,31 @@ Add `http://your-server.com:8080/sse` as an MCP server URL in settings.
 Full reference with all available options:
 
 ```yaml
-# Transport mode
+# ── Transport ────────────────────────────────────────────────────────────────
 gateway:
-  mode: stdio          # "stdio" or "sse"
-  addr: ":8080"        # SSE listen address (sse mode only)
-  base_url: "http://localhost:8080"  # public URL for SSE clients
+  mode: stdio            # "stdio" (default) or "sse"
+  addr: ":8080"          # SSE listen address
+  base_url: "http://localhost:8080"  # public URL advertised to SSE clients
 
-# HTTP admin server — exposes /healthz and /metrics
+# ── Admin HTTP server ────────────────────────────────────────────────────────
 admin:
   enabled: true
-  addr: ":9090"          # default
+  addr: ":9090"          # exposes GET /healthz and GET /metrics
 
-# Audit logging — every tool/resource/prompt call is logged as NDJSON
+# ── Audit logging ────────────────────────────────────────────────────────────
 audit:
   enabled: true
   output: file           # "file" or "stderr"
-  path: audit.log        # required when output=file; file is appended on each run
+  path: audit.log        # appended on each run; required when output=file
   mask:
     enabled: true        # mask PII in logged arguments
     patterns:            # extra regex patterns on top of built-ins
-      - '\b[A-Z]{2}\d{2}[A-Z0-9]{4}\d{7}([A-Z0-9]?){0,16}\b'  # IBAN example
+      - '\b[A-Z]{2}\d{2}[A-Z0-9]{4}\d{7}([A-Z0-9]?){0,16}\b'  # IBAN
 
-# Downstream MCP servers
+# ── Downstream MCP servers ───────────────────────────────────────────────────
 servers:
   my-server:
-    # ── Transport ──────────────────────────────────────────────────────────
+    # Transport
     type: stdio            # "stdio" or "sse"
     command: npx           # executable to spawn (stdio only)
     args:
@@ -158,29 +144,60 @@ servers:
     env:                   # extra environment variables (optional)
       - API_KEY=secret
 
-    # For SSE type:
+    # For SSE downstream:
     # type: sse
     # url: http://localhost:3000/sse
 
-    # ── Naming ─────────────────────────────────────────────────────────────
-    prefix: myserver       # tool prefix; default is the server key ("my-server")
-                           # tools will appear as "myserver__tool_name"
+    # Naming
+    prefix: myserver       # tool/prompt prefix; defaults to server key
+                           # tools appear as "myserver__tool_name"
 
-    # ── Timeouts ───────────────────────────────────────────────────────────
+    # Tool filtering — control what the LLM sees from this server
+    tools:
+      allow:               # whitelist: only these tools are exposed (by original name)
+        - search
+        - get_item
+      # deny:              # blacklist: expose everything except these
+      #   - dangerous_tool
+
+    # Timeouts
     timeout:
       connect: 30s         # deadline for startup handshake + capability discovery
-      call: 10s            # per-request deadline for every tool/resource/prompt call
+      call: 10s            # per-request deadline for tool/resource/prompt calls
 
-    # ── Circuit Breaker ────────────────────────────────────────────────────
+    # Circuit breaker
     circuit_breaker:
       enabled: true
-      threshold: 5         # consecutive failures before opening the circuit
+      threshold: 5         # consecutive failures before opening
       open_duration: 30s   # how long to stay open before probing again
 ```
 
+### Tool filtering
+
+Use `tools.allow` to expose only specific tools from a server, or `tools.deny` to hide specific tools. Both use the **original tool name** (without prefix).
+
+```yaml
+servers:
+  context7:
+    tools:
+      allow:
+        - resolve-library-id   # only this tool is visible to the LLM
+                               # query-docs is hidden
+
+  github:
+    tools:
+      deny:
+        - delete_repository    # hide dangerous tools, expose the rest
+
+  my-server:
+    # no tools section = all tools exposed (default)
+```
+
+`allow` takes precedence over `deny`. Changes take effect immediately after `kill -HUP`.
+
 ### Built-in PII masking patterns
 
-When `audit.mask.enabled: true`, the following are always masked in audit logs:
+When `audit.mask.enabled: true`, the following are always masked in logs:
 
 | Pattern | Example |
 |---------|---------|
@@ -189,16 +206,16 @@ When `audit.mask.enabled: true`, the following are always masked in audit logs:
 | Email address | `user@example.com` |
 | Russian/Kazakh phone | `+7 (777) 123-45-67` |
 
-Add any custom regex patterns under `audit.mask.patterns`.
-
 ---
 
-## Real-world example: Context7 + Filesystem
+## Example: Context7 + Filesystem
 
 ```yaml
+gateway:
+  mode: stdio
+
 admin:
   enabled: true
-  addr: ":9090"
 
 audit:
   enabled: true
@@ -211,9 +228,7 @@ servers:
   context7:
     type: stdio
     command: npx
-    args:
-      - -y
-      - @upstash/context7-mcp
+    args: ["-y", "@upstash/context7-mcp"]
     timeout:
       connect: 60s
       call: 30s
@@ -225,10 +240,7 @@ servers:
   filesystem:
     type: stdio
     command: npx
-    args:
-      - -y
-      - "@modelcontextprotocol/server-filesystem"
-      - /Users/you/projects
+    args: ["-y", "@modelcontextprotocol/server-filesystem", "/Users/you/projects"]
     timeout:
       connect: 10s
       call: 5s
@@ -236,13 +248,19 @@ servers:
       enabled: true
       threshold: 5
       open_duration: 30s
+    tools:
+      allow:
+        - read_file
+        - list_directory
+        - search_files
 ```
 
-After `make install` and restarting Claude Desktop, you'll see tools like:
+After `make install` and restarting Claude Desktop, you'll see:
 - `context7__resolve-library-id`
-- `context7__get-library-docs`
+- `context7__query-docs`
 - `filesystem__read_file`
 - `filesystem__list_directory`
+- `filesystem__search_files`
 
 ---
 
@@ -255,7 +273,7 @@ Add or remove servers without restarting the gateway or interrupting your LLM se
 kill -HUP $(pgrep mcp-gateway)
 ```
 
-The gateway diffs the old and new config — only changed servers are affected.
+The gateway diffs old vs new config — only changed servers are affected.
 
 ---
 
@@ -277,7 +295,7 @@ curl http://localhost:9090/healthz
 }
 ```
 
-Returns `200 OK` when all servers are healthy, `503 Service Unavailable` if any circuit breaker is open.
+Returns `200 OK` when all healthy, `503` if any circuit breaker is open.
 
 ### Prometheus metrics
 
@@ -285,50 +303,47 @@ Returns `200 OK` when all servers are healthy, `503 Service Unavailable` if any 
 curl http://localhost:9090/metrics
 ```
 
-Key metrics:
-
 | Metric | Description |
 |--------|-------------|
-| `mcp_gateway_requests_total{server, method, result}` | Request counter partitioned by server, method (`tools/call`, `resources/read`, `prompts/get`), and result (`ok`, `error`, `timeout`, `circuit_open`) |
-| `mcp_gateway_request_duration_seconds{server, method}` | Request latency histogram |
-| `mcp_gateway_circuit_breaker_open{server}` | `1` if circuit is open (server blocked), `0` otherwise |
+| `mcp_gateway_requests_total{server,method,result}` | Request counter — result is `ok`, `error`, `timeout`, or `circuit_open` |
+| `mcp_gateway_request_duration_seconds{server,method}` | Latency histogram |
+| `mcp_gateway_circuit_breaker_open{server}` | `1` if circuit is open, `0` otherwise |
 
 ### Audit log
 
-Every call is written as one JSON line to the configured path:
+Every call is written as one JSON line:
 
 ```json
-{"ts":"2026-06-14T10:00:00Z","id":"1","method":"tools/call","name":"context7__get-library-docs","server":"context7","args":"{\"libraryId\":\"/vercel/next.js\"}","result":"ok","duration_ms":312}
+{"ts":"2026-06-15T10:00:00Z","id":"1","method":"tools/call","name":"context7__query-docs","server":"context7","args":"{\"libraryId\":\"/vercel/next.js\"}","result":"ok","duration_ms":312}
 ```
 
 ---
 
 ## Circuit Breaker
 
-The circuit breaker protects against cascading failures:
-
 ```
 Closed ──N failures──► Open ──open_duration──► Half-Open ──success──► Closed
-                                                    │
-                                                 failure
-                                                    │
-                                                  Open
+                                                   │
+                                                failure
+                                                   ▼
+                                                 Open
 ```
 
 - **Closed** — requests pass through normally
-- **Open** — requests are immediately rejected with an error the LLM can read
-- **Half-Open** — one probe request is allowed to test if the server recovered
+- **Open** — requests are immediately rejected with a readable error to the LLM
+- **Half-Open** — one probe request allowed to test recovery
 
 ---
 
 ## Development
 
 ```bash
-make test          # run all tests
-make build         # build gateway binary
+make build           # build gateway binary
 make build-examples  # build dummy-db and dummy-jira test servers
-make run           # run with default config.yaml
-make clean         # remove build artifacts
+make run             # run with default config.yaml
+make test            # run all tests
+make install         # build + write Claude Desktop config
+make clean           # remove build artifacts
 ```
 
 ### Project structure
@@ -336,10 +351,10 @@ make clean         # remove build artifacts
 ```
 cmd/mcp-gateway/     — entry point
 internal/
-  config/            — YAML config loader
-  proxy/             — core routing, connect, reload, handlers
+  config/            — YAML config loader with defaults and validation
+  proxy/             — core: routing, connect, reload, tool filtering
   registry/          — tool/resource/prompt → client mapping
-  breaker/           — circuit breaker
+  breaker/           — circuit breaker (closed/open/half-open)
   audit/             — NDJSON logger + PII masker
   metrics/           — Prometheus metrics
 examples/
