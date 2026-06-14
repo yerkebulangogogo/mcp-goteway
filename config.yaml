@@ -1,10 +1,7 @@
 gateway:
-  mode: stdio          # "stdio" — для Claude Desktop (локально)
-                       # "sse"   — HTTP сервер, клиенты подключаются удалённо
-
-  # SSE режим (раскомментировать если mode: sse):
-  # addr: ":8080"
-  # base_url: "http://localhost:8080"   # публичный URL для клиентов
+  mode: sse
+  addr: ":8080"
+  base_url: "http://localhost:8080"
 
 admin:
   enabled: true
@@ -12,8 +9,7 @@ admin:
 
 audit:
   enabled: true
-  output: file          # "stderr" or "file"
-  path: audit.log       # appended on each run; required when output=file
+  output: stderr        # логи прямо в консоль
   mask:
     enabled: true
     patterns:           # extra patterns on top of built-ins (card/IIN/email/phone)
