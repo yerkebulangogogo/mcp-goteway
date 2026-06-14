@@ -11,8 +11,8 @@ import (
 	"github.com/mark3labs/mcp-go/mcp"
 	"github.com/mark3labs/mcp-go/server"
 
-	"github.com/erke/mcp-gateway/internal/config"
-	"github.com/erke/mcp-gateway/internal/proxy"
+	"github.com/yerkebulangogogo/mcp-goteway/internal/config"
+	"github.com/yerkebulangogogo/mcp-goteway/internal/proxy"
 )
 
 // ── Helpers ────────────────────────────────────────────────────────────────

@@ -9,7 +9,7 @@ import (
 	"sync/atomic"
 	"time"
 
-	"github.com/erke/mcp-gateway/internal/config"
+	"github.com/yerkebulangogogo/mcp-goteway/internal/config"
 )
 
 // Method constants mirror MCP method names used in audit entries.

@@ -15,10 +15,10 @@ import (
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/promhttp"
 
-	"github.com/erke/mcp-gateway/internal/audit"
-	"github.com/erke/mcp-gateway/internal/config"
-	"github.com/erke/mcp-gateway/internal/metrics"
-	"github.com/erke/mcp-gateway/internal/proxy"
+	"github.com/yerkebulangogogo/mcp-goteway/internal/audit"
+	"github.com/yerkebulangogogo/mcp-goteway/internal/config"
+	"github.com/yerkebulangogogo/mcp-goteway/internal/metrics"
+	"github.com/yerkebulangogogo/mcp-goteway/internal/proxy"
 )
 
 func main() {

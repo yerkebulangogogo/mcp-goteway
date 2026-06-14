@@ -6,8 +6,8 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/erke/mcp-gateway/internal/audit"
-	"github.com/erke/mcp-gateway/internal/config"
+	"github.com/yerkebulangogogo/mcp-goteway/internal/audit"
+	"github.com/yerkebulangogogo/mcp-goteway/internal/config"
 )
 
 // ── Masker ─────────────────────────────────────────────────────────────────

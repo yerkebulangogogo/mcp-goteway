@@ -5,7 +5,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/erke/mcp-gateway/internal/config"
+	"github.com/yerkebulangogogo/mcp-goteway/internal/config"
 )
 
 func writeTemp(t *testing.T, content string) string {

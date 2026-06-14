@@ -5,7 +5,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/erke/mcp-gateway/internal/breaker"
+	"github.com/yerkebulangogogo/mcp-goteway/internal/breaker"
 )
 
 var errFake = errors.New("downstream error")

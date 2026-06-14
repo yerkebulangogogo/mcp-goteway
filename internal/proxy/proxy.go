@@ -13,11 +13,11 @@ import (
 	"github.com/mark3labs/mcp-go/mcp"
 	"github.com/mark3labs/mcp-go/server"
 
-	"github.com/erke/mcp-gateway/internal/audit"
-	"github.com/erke/mcp-gateway/internal/breaker"
-	"github.com/erke/mcp-gateway/internal/config"
-	"github.com/erke/mcp-gateway/internal/metrics"
-	"github.com/erke/mcp-gateway/internal/registry"
+	"github.com/yerkebulangogogo/mcp-goteway/internal/audit"
+	"github.com/yerkebulangogogo/mcp-goteway/internal/breaker"
+	"github.com/yerkebulangogogo/mcp-goteway/internal/config"
+	"github.com/yerkebulangogogo/mcp-goteway/internal/metrics"
+	"github.com/yerkebulangogogo/mcp-goteway/internal/registry"
 )
 
 // downstream holds everything the gateway needs to talk to one MCP server.

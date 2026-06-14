@@ -36,7 +36,7 @@ Claude Desktop / Cursor / any MCP client
 ### 1. Clone and build
 
 ```bash
-git clone https://github.com/erke/mcp-gateway
+git clone https://github.com/yerkebulangogogo/mcp-goteway
 cd mcp-gateway
 make build
 ```

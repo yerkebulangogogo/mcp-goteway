@@ -1,4 +1,4 @@
-module github.com/erke/mcp-gateway
+module github.com/yerkebulangogogo/mcp-goteway
 
 go 1.26.1
 
