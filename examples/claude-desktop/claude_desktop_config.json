@@ -1,0 +1,8 @@
+{
+  "mcpServers": {
+    "mcp-gateway": {
+      "command": "/Users/erke/Desktop/mcp-gateway/bin/mcp-gateway",
+      "args": ["--config", "/Users/erke/Desktop/mcp-gateway/config.yaml"]
+    }
+  }
+}

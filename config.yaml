@@ -1,0 +1,48 @@
+admin:
+  enabled: true
+  addr: ":9090"   # HTTP admin server: GET /healthz and GET /metrics
+
+audit:
+  enabled: true
+  output: file          # "stderr" or "file"
+  path: audit.log       # appended on each run; required when output=file
+  mask:
+    enabled: true
+    patterns:           # extra patterns on top of built-ins (card/IIN/email/phone)
+      - '\b[A-Z]{2}\d{2}[A-Z0-9]{4}\d{7}([A-Z0-9]?){0,16}\b'  # IBAN
+
+servers:
+  dummy-db:
+    type: stdio
+    command: go
+    args:
+      - run
+      - ./examples/dummy-db
+    # prefix: "db"            # optional — overrides default prefix (server name)
+
+    timeout:
+      connect: 30s            # deadline for initial handshake + tools/list at startup
+      call: 5s                # per-request deadline for tool calls, resource reads, prompt gets
+
+    circuit_breaker:
+      enabled: true
+      threshold: 5            # consecutive failures before opening the circuit
+      open_duration: 30s      # how long to stay open before allowing a probe request
+
+
+  dummy-jira:
+    type: stdio
+    command: go
+    args:
+      - run
+      - ./examples/dummy-jira
+
+    timeout:
+      connect: 30s
+      call: 10s               # jira can be slow, give it more time
+
+    circuit_breaker:
+      enabled: true
+      threshold: 3            # stricter — open faster for critical services
+      open_duration: 60s
+
