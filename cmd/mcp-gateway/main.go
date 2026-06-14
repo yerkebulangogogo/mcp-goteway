@@ -9,6 +9,7 @@ import (
 	"net/http"
 	"os"
 	"os/signal"
+	"path/filepath"
 	"syscall"
 	"time"
 
@@ -30,7 +31,19 @@ func main() {
 		Level: slog.LevelInfo,
 	}))
 
-	cfg, err := config.Load(*configPath)
+	// chdir to the config file's directory so that relative paths in config
+	// (commands, audit log path) work regardless of where the process was launched from.
+	absConfig, err := filepath.Abs(*configPath)
+	if err != nil {
+		logger.Error("failed to resolve config path", "err", err)
+		os.Exit(1)
+	}
+	if err := os.Chdir(filepath.Dir(absConfig)); err != nil {
+		logger.Error("failed to chdir to config directory", "err", err)
+		os.Exit(1)
+	}
+
+	cfg, err := config.Load(absConfig)
 	if err != nil {
 		logger.Error("failed to load config", "err", err)
 		os.Exit(1)
