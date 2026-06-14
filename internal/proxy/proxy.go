@@ -279,7 +279,7 @@ func (g *Gateway) connectOne(ctx context.Context, name string, cfg config.Server
 
 	caps := initResult.Capabilities
 	if caps.Tools != nil {
-		if err := g.aggregateTools(connectCtx, ds, cfg.Prefix); err != nil {
+		if err := g.aggregateTools(connectCtx, ds, cfg.Prefix, cfg.Tools); err != nil {
 			return err
 		}
 	}
@@ -324,14 +324,27 @@ func (g *Gateway) dial(ctx context.Context, cfg config.ServerConfig) (*client.Cl
 
 // ── Tools ──────────────────────────────────────────────────────────────────
 
-func (g *Gateway) aggregateTools(ctx context.Context, ds *downstream, prefix string) error {
+func (g *Gateway) aggregateTools(ctx context.Context, ds *downstream, prefix string, toolsCfg config.ToolsConfig) error {
 	result, err := ds.client.ListTools(ctx, mcp.ListToolsRequest{})
 	if err != nil {
 		return fmt.Errorf("list tools: %w", err)
 	}
 
+	allow := toSet(toolsCfg.Allow)
+	deny := toSet(toolsCfg.Deny)
+
 	for _, tool := range result.Tools {
 		originalName := tool.Name
+
+		if len(allow) > 0 && !allow[originalName] {
+			g.logger.Info("tool filtered (not in allow list)", "tool", originalName, "server", ds.name)
+			continue
+		}
+		if deny[originalName] {
+			g.logger.Info("tool filtered (in deny list)", "tool", originalName, "server", ds.name)
+			continue
+		}
+
 		prefixedName := prefix + "__" + originalName
 
 		proxiedTool := tool
@@ -601,6 +614,17 @@ default:
 		msg = fmt.Sprintf("Tool %q failed: %s", toolName, err)
 	}
 	return mcp.NewToolResultError(msg)
+}
+
+func toSet(ss []string) map[string]bool {
+	if len(ss) == 0 {
+		return nil
+	}
+	m := make(map[string]bool, len(ss))
+	for _, s := range ss {
+		m[s] = true
+	}
+	return m
 }
 
 // Close shuts down all downstream client connections.

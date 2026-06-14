@@ -76,6 +76,11 @@ type CircuitBreakerConfig struct {
 }
 
 
+type ToolsConfig struct {
+	Allow []string `yaml:"allow"` // if set, only these tools are exposed (original names)
+	Deny  []string `yaml:"deny"`  // if set, these tools are hidden (original names)
+}
+
 type ServerConfig struct {
 	Type    ServerType `yaml:"type"`
 	Command string     `yaml:"command"`
@@ -86,6 +91,7 @@ type ServerConfig struct {
 
 	Timeout        TimeoutConfig        `yaml:"timeout"`
 	CircuitBreaker CircuitBreakerConfig `yaml:"circuit_breaker"`
+	Tools          ToolsConfig          `yaml:"tools"`
 }
 
 type Config struct {
