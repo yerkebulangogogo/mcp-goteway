@@ -10,6 +10,7 @@ import (
 	"os"
 	"os/signal"
 	"syscall"
+	"time"
 
 	"github.com/mark3labs/mcp-go/server"
 	"github.com/prometheus/client_golang/prometheus"
@@ -25,7 +26,6 @@ func main() {
 	configPath := flag.String("config", "config.yaml", "path to config file")
 	flag.Parse()
 
-	// Gateway logs must go to stderr — stdout is the MCP STDIO channel.
 	logger := slog.New(slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{
 		Level: slog.LevelInfo,
 	}))
@@ -44,7 +44,6 @@ func main() {
 		server.WithPromptCapabilities(false),
 	)
 
-	// SIGINT/SIGTERM cancel the root context → Listen returns → clean shutdown.
 	ctx, cancel := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
 	defer cancel()
 
@@ -61,7 +60,6 @@ func main() {
 		logger.Info("audit logging enabled", "output", cfg.Audit.Output, "mask", cfg.Audit.Mask.Enabled)
 	}
 
-	// Prometheus metrics — always enabled; admin HTTP server is optional.
 	reg := prometheus.NewRegistry()
 	m := metrics.New(reg)
 	gateway.SetMetrics(m)
@@ -76,17 +74,13 @@ func main() {
 		os.Exit(1)
 	}
 
-	// SIGHUP triggers a hot reload: diff old vs new config, add/remove servers
-	// without restarting the STDIO server or interrupting the LLM session.
 	go watchSIGHUP(ctx, *configPath, gateway, logger)
 
-	logger.Info("mcp-gateway ready, serving on stdio")
-
-	stdioServer := server.NewStdioServer(mcpServer)
-	if err := stdioServer.Listen(ctx, os.Stdin, os.Stdout); err != nil && !errors.Is(err, context.Canceled) {
-		logger.Error("stdio server error", "err", err)
-		gateway.Close()
-		os.Exit(1)
+	switch cfg.Gateway.Mode {
+	case "sse":
+		runSSE(ctx, cfg.Gateway, mcpServer, logger)
+	default:
+		runStdio(ctx, mcpServer, gateway, logger)
 	}
 
 	logger.Info("shutting down")
@@ -94,9 +88,38 @@ func main() {
 	logger.Info("shutdown complete")
 }
 
+func runStdio(ctx context.Context, mcpServer *server.MCPServer, gateway *proxy.Gateway, logger *slog.Logger) {
+	logger.Info("mcp-gateway ready, serving on stdio")
+	stdioServer := server.NewStdioServer(mcpServer)
+	if err := stdioServer.Listen(ctx, os.Stdin, os.Stdout); err != nil && !errors.Is(err, context.Canceled) {
+		logger.Error("stdio server error", "err", err)
+		gateway.Close()
+		os.Exit(1)
+	}
+}
+
+func runSSE(ctx context.Context, cfg config.GatewayConfig, mcpServer *server.MCPServer, logger *slog.Logger) {
+	sseServer := server.NewSSEServer(mcpServer, server.WithBaseURL(cfg.BaseURL))
+
+	go func() {
+		logger.Info("mcp-gateway ready, serving on SSE", "addr", cfg.Addr, "base_url", cfg.BaseURL)
+		if err := sseServer.Start(cfg.Addr); err != nil && !errors.Is(err, http.ErrServerClosed) {
+			logger.Error("SSE server error", "err", err)
+			os.Exit(1)
+		}
+	}()
+
+	<-ctx.Done()
+
+	shutdownCtx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+	if err := sseServer.Shutdown(shutdownCtx); err != nil {
+		logger.Error("SSE server shutdown error", "err", err)
+	}
+}
+
 func startAdminServer(addr string, reg *prometheus.Registry, gw *proxy.Gateway, logger *slog.Logger) {
 	mux := http.NewServeMux()
-
 	mux.Handle("/metrics", promhttp.HandlerFor(reg, promhttp.HandlerOpts{}))
 	mux.HandleFunc("/healthz", healthHandler(gw))
 

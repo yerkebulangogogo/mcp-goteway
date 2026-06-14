@@ -1,19 +1,23 @@
 # MCP Gateway
 
-A reverse proxy for [Model Context Protocol](https://modelcontextprotocol.io) servers. Connect multiple MCP servers to your LLM client through a single entry point — like nginx, but for MCP.
+A reverse proxy for [Model Context Protocol](https://modelcontextprotocol.io) servers. Aggregate multiple MCP servers behind a single endpoint — run locally via STDIO or as a shared HTTP service your whole team connects to.
 
 ```
-Claude Desktop / Cursor / any MCP client
-              │  STDIO
-              ▼
-        MCP Gateway  ←── config.yaml
-         ├── context7      (npx)
-         ├── filesystem    (npx)
-         └── your-service  (any stdio/SSE MCP server)
+                    ┌─────────────────────────────────┐
+Claude Desktop ─────┤                                 ├──── context7   (npx)
+Cursor         ─────┤      MCP Gateway                ├──── filesystem (npx)
+VS Code        ─────┤      (STDIO or SSE/HTTP)        ├──── your-api   (stdio)
+any MCP client ─────┤                                 ├──── any MCP server
+                    └─────────────────────────────────┘
 ```
+
+**Two modes:**
+- **STDIO** — runs as a local subprocess, perfect for Claude Desktop
+- **SSE** — runs as an HTTP server (`http://your-server:8080/sse`), any MCP client connects remotely
 
 ## Features
 
+- **Two transport modes** — STDIO for local use, SSE/HTTP for shared remote access
 - **Aggregation** — Tools, Resources, and Prompts from all servers appear as one
 - **Namespacing** — `server__tool_name` prevents collisions across servers
 - **Circuit Breaker** — automatic failover when a downstream server goes down
@@ -67,11 +71,66 @@ This builds the binary and writes the Claude Desktop config automatically. Resta
 
 ---
 
+## Modes
+
+### STDIO mode (local, Claude Desktop)
+
+The gateway runs as a subprocess. Claude Desktop spawns it and communicates over stdin/stdout. This is the default.
+
+```yaml
+gateway:
+  mode: stdio
+```
+
+```bash
+make install   # builds binary + writes Claude Desktop config automatically
+```
+
+### SSE mode (remote, shared team server)
+
+The gateway runs as an HTTP server. Any MCP client can connect to it from anywhere.
+
+```yaml
+gateway:
+  mode: sse
+  addr: ":8080"
+  base_url: "http://your-server.com:8080"  # public URL clients will use
+```
+
+```bash
+./bin/mcp-gateway --config config.yaml
+# → mcp-gateway ready, serving on SSE  addr=:8080  base_url=http://your-server.com:8080
+```
+
+Clients connect to: `http://your-server.com:8080/sse`
+
+**Claude Desktop (SSE mode):**
+```json
+{
+  "mcpServers": {
+    "mcp-gateway": {
+      "url": "http://your-server.com:8080/sse"
+    }
+  }
+}
+```
+
+**Cursor / VS Code:**  
+Add `http://your-server.com:8080/sse` as an MCP server URL in settings.
+
+---
+
 ## Configuration
 
 Full reference with all available options:
 
 ```yaml
+# Transport mode
+gateway:
+  mode: stdio          # "stdio" or "sse"
+  addr: ":8080"        # SSE listen address (sse mode only)
+  base_url: "http://localhost:8080"  # public URL for SSE clients
+
 # HTTP admin server — exposes /healthz and /metrics
 admin:
   enabled: true

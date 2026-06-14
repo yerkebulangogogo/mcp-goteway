@@ -8,6 +8,14 @@ import (
 	"gopkg.in/yaml.v3"
 )
 
+// ── Gateway transport ──────────────────────────────────────────────────────
+
+type GatewayConfig struct {
+	Mode    string `yaml:"mode"`     // "stdio" (default) or "sse"
+	Addr    string `yaml:"addr"`     // SSE listen address, e.g. ":8080"
+	BaseURL string `yaml:"base_url"` // public URL advertised to SSE clients, e.g. "http://localhost:8080"
+}
+
 // ── Admin ──────────────────────────────────────────────────────────────────
 
 type AdminConfig struct {
@@ -81,6 +89,7 @@ type ServerConfig struct {
 }
 
 type Config struct {
+	Gateway GatewayConfig           `yaml:"gateway"`
 	Admin   AdminConfig             `yaml:"admin"`
 	Audit   AuditConfig             `yaml:"audit"`
 	Servers map[string]ServerConfig `yaml:"servers"`
@@ -105,6 +114,17 @@ func Load(path string) (*Config, error) {
 		return nil, fmt.Errorf("parse config: %w", err)
 	}
 
+	if cfg.Gateway.Mode == "" {
+		cfg.Gateway.Mode = "stdio"
+	}
+	if cfg.Gateway.Mode == "sse" {
+		if cfg.Gateway.Addr == "" {
+			cfg.Gateway.Addr = ":8080"
+		}
+		if cfg.Gateway.BaseURL == "" {
+			cfg.Gateway.BaseURL = "http://localhost" + cfg.Gateway.Addr
+		}
+	}
 	if cfg.Admin.Addr == "" {
 		cfg.Admin.Addr = defaultAdminAddr
 	}

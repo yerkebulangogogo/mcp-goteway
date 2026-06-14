@@ -1,3 +1,11 @@
+gateway:
+  mode: stdio          # "stdio" — для Claude Desktop (локально)
+                       # "sse"   — HTTP сервер, клиенты подключаются удалённо
+
+  # SSE режим (раскомментировать если mode: sse):
+  # addr: ":8080"
+  # base_url: "http://localhost:8080"   # публичный URL для клиентов
+
 admin:
   enabled: true
   addr: ":9090"   # HTTP admin server: GET /healthz and GET /metrics
