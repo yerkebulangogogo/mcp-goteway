@@ -135,6 +135,7 @@ func startAdminServer(addr string, reg *prometheus.Registry, gw *proxy.Gateway, 
 	mux := http.NewServeMux()
 	mux.Handle("/metrics", promhttp.HandlerFor(reg, promhttp.HandlerOpts{}))
 	mux.HandleFunc("/healthz", healthHandler(gw))
+	mux.HandleFunc("/capabilities", capabilitiesHandler(gw))
 
 	srv := &http.Server{Addr: addr, Handler: mux}
 	go func() {
@@ -143,6 +144,23 @@ func startAdminServer(addr string, reg *prometheus.Registry, gw *proxy.Gateway, 
 			logger.Error("admin server error", "err", err)
 		}
 	}()
+}
+
+func capabilitiesHandler(gw *proxy.Gateway) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		tools, resources, prompts := gw.Capabilities()
+		w.Header().Set("Content-Type", "application/json")
+		_ = json.NewEncoder(w).Encode(map[string]any{
+			"tools":     tools,
+			"resources": resources,
+			"prompts":   prompts,
+			"totals": map[string]int{
+				"tools":     len(tools),
+				"resources": len(resources),
+				"prompts":   len(prompts),
+			},
+		})
+	}
 }
 
 func healthHandler(gw *proxy.Gateway) http.HandlerFunc {

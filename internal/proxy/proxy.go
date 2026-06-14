@@ -93,6 +93,46 @@ type ServerStatus struct {
 	CircuitBreaker string `json:"circuit_breaker"` // "closed", "open", "half-open", "disabled"
 }
 
+// CapabilityInfo describes one tool, resource, or prompt exposed by the gateway.
+type CapabilityInfo struct {
+	Name        string `json:"name"`
+	Original    string `json:"original,omitempty"`
+	Server      string `json:"server"`
+	Description string `json:"description,omitempty"`
+}
+
+// Capabilities returns all currently registered tools, resources, and prompts.
+func (g *Gateway) Capabilities() (tools, resources, prompts []CapabilityInfo) {
+	for _, e := range g.registry.AllTools() {
+		tools = append(tools, CapabilityInfo{
+			Name:        e.Tool.Name,
+			Original:    e.OriginalName,
+			Server:      e.ServerName,
+			Description: e.Tool.Description,
+		})
+	}
+	for _, e := range g.registry.AllResources() {
+		resources = append(resources, CapabilityInfo{
+			Name:   e.Resource.URI,
+			Server: e.ServerName,
+		})
+	}
+	for _, e := range g.registry.AllResourceTemplates() {
+		resources = append(resources, CapabilityInfo{
+			Name:   e.Template.URITemplate.Raw(),
+			Server: e.ServerName,
+		})
+	}
+	for _, e := range g.registry.AllPrompts() {
+		prompts = append(prompts, CapabilityInfo{
+			Name:     e.Prompt.Name,
+			Original: e.OriginalName,
+			Server:   e.ServerName,
+		})
+	}
+	return
+}
+
 // ServerStatuses returns the current status of all connected downstream servers.
 func (g *Gateway) ServerStatuses() map[string]ServerStatus {
 	g.mu.Lock()

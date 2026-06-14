@@ -107,6 +107,46 @@ func (r *Registry) LookupPrompt(name string) (PromptEntry, bool) {
 	return e, ok
 }
 
+func (r *Registry) AllTools() []ToolEntry {
+	r.mu.RLock()
+	defer r.mu.RUnlock()
+	out := make([]ToolEntry, 0, len(r.tools))
+	for _, e := range r.tools {
+		out = append(out, e)
+	}
+	return out
+}
+
+func (r *Registry) AllResources() []ResourceEntry {
+	r.mu.RLock()
+	defer r.mu.RUnlock()
+	out := make([]ResourceEntry, 0, len(r.resources))
+	for _, e := range r.resources {
+		out = append(out, e)
+	}
+	return out
+}
+
+func (r *Registry) AllResourceTemplates() []ResourceTemplateEntry {
+	r.mu.RLock()
+	defer r.mu.RUnlock()
+	out := make([]ResourceTemplateEntry, 0, len(r.resourceTemplates))
+	for _, e := range r.resourceTemplates {
+		out = append(out, e)
+	}
+	return out
+}
+
+func (r *Registry) AllPrompts() []PromptEntry {
+	r.mu.RLock()
+	defer r.mu.RUnlock()
+	out := make([]PromptEntry, 0, len(r.prompts))
+	for _, e := range r.prompts {
+		out = append(out, e)
+	}
+	return out
+}
+
 // DeleteByServer removes all registry entries that belong to the given server.
 func (r *Registry) DeleteByServer(serverName string) {
 	r.mu.Lock()
