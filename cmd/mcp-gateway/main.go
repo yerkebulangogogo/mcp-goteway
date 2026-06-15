@@ -138,6 +138,19 @@ func runSSE(ctx context.Context, cfg config.GatewayConfig, mcpServer *server.MCP
 	}
 }
 
+func corsMiddleware(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Access-Control-Allow-Origin", "*")
+		w.Header().Set("Access-Control-Allow-Methods", "GET, POST, DELETE, OPTIONS")
+		w.Header().Set("Access-Control-Allow-Headers", "Content-Type")
+		if r.Method == http.MethodOptions {
+			w.WriteHeader(http.StatusNoContent)
+			return
+		}
+		next.ServeHTTP(w, r)
+	})
+}
+
 func startAdminServer(ctx context.Context, addr string, reg *prometheus.Registry, gw *proxy.Gateway, al *audit.Logger, configPath string, logger *slog.Logger) {
 	mux := http.NewServeMux()
 	mux.Handle("/metrics", promhttp.HandlerFor(reg, promhttp.HandlerOpts{}))
@@ -151,7 +164,7 @@ func startAdminServer(ctx context.Context, addr string, reg *prometheus.Registry
 		_, _ = w.Write(dashboardHTML)
 	})
 
-	srv := &http.Server{Addr: addr, Handler: mux}
+	srv := &http.Server{Addr: addr, Handler: corsMiddleware(mux)}
 	go func() {
 		logger.Info("admin server listening", "addr", addr)
 		if err := srv.ListenAndServe(); err != nil && !errors.Is(err, http.ErrServerClosed) {
