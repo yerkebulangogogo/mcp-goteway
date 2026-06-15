@@ -5,11 +5,13 @@ import (
 	"encoding/json"
 	"errors"
 	"flag"
+	"fmt"
 	"log/slog"
 	"net/http"
 	"os"
 	"os/signal"
 	"path/filepath"
+	"strings"
 	"syscall"
 	"time"
 
@@ -52,9 +54,9 @@ func main() {
 	mcpServer := server.NewMCPServer(
 		"mcp-gateway",
 		"0.1.0",
-		server.WithToolCapabilities(false),
-		server.WithResourceCapabilities(false, false),
-		server.WithPromptCapabilities(false),
+		server.WithToolCapabilities(true),
+		server.WithResourceCapabilities(false, true),
+		server.WithPromptCapabilities(true),
 	)
 
 	ctx, cancel := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
@@ -78,7 +80,7 @@ func main() {
 	gateway.SetMetrics(m)
 
 	if cfg.Admin.Enabled {
-		startAdminServer(cfg.Admin.Addr, reg, gateway, logger)
+		startAdminServer(ctx, cfg.Admin.Addr, reg, gateway, absConfig, logger)
 	}
 
 	logger.Info("connecting to downstream servers", "count", len(cfg.Servers))
@@ -131,11 +133,13 @@ func runSSE(ctx context.Context, cfg config.GatewayConfig, mcpServer *server.MCP
 	}
 }
 
-func startAdminServer(addr string, reg *prometheus.Registry, gw *proxy.Gateway, logger *slog.Logger) {
+func startAdminServer(ctx context.Context, addr string, reg *prometheus.Registry, gw *proxy.Gateway, configPath string, logger *slog.Logger) {
 	mux := http.NewServeMux()
 	mux.Handle("/metrics", promhttp.HandlerFor(reg, promhttp.HandlerOpts{}))
 	mux.HandleFunc("/healthz", healthHandler(gw))
 	mux.HandleFunc("/capabilities", capabilitiesHandler(gw))
+	mux.HandleFunc("/admin/servers", serversHandler(ctx, gw, configPath, logger))
+	mux.HandleFunc("/admin/servers/", serverByNameHandler(ctx, gw, configPath, logger))
 
 	srv := &http.Server{Addr: addr, Handler: mux}
 	go func() {
@@ -189,6 +193,213 @@ func healthHandler(gw *proxy.Gateway) http.HandlerFunc {
 			"servers": statuses,
 		})
 	}
+}
+
+// ── Dynamic server management (/admin/servers) ─────────────────────────────
+
+type serverAddRequest struct {
+	Name    string   `json:"name"`
+	Type    string   `json:"type"`
+	Command string   `json:"command"`
+	Args    []string `json:"args"`
+	Env     []string `json:"env"`
+	URL     string   `json:"url"`
+	Prefix  string   `json:"prefix"`
+	Timeout struct {
+		Connect string `json:"connect"`
+		Call    string `json:"call"`
+	} `json:"timeout"`
+	CircuitBreaker struct {
+		Enabled      bool   `json:"enabled"`
+		Threshold    uint32 `json:"threshold"`
+		OpenDuration string `json:"open_duration"`
+	} `json:"circuit_breaker"`
+}
+
+func (req serverAddRequest) validate() error {
+	if req.Name == "" {
+		return fmt.Errorf("name is required")
+	}
+	switch req.Type {
+	case "stdio":
+		if req.Command == "" {
+			return fmt.Errorf("command is required for stdio type")
+		}
+	case "sse":
+		if req.URL == "" {
+			return fmt.Errorf("url is required for sse type")
+		}
+	default:
+		return fmt.Errorf("type must be \"stdio\" or \"sse\", got %q", req.Type)
+	}
+	return nil
+}
+
+func (req serverAddRequest) toConfig() (config.ServerConfig, error) {
+	cfg := config.ServerConfig{
+		Type:    config.ServerType(req.Type),
+		Command: req.Command,
+		Args:    req.Args,
+		Env:     req.Env,
+		URL:     req.URL,
+		Prefix:  req.Prefix,
+	}
+	if cfg.Prefix == "" {
+		cfg.Prefix = req.Name
+	}
+
+	parseDur := func(s string, fallback time.Duration) (config.Duration, error) {
+		if s == "" {
+			return config.Duration{Duration: fallback}, nil
+		}
+		d, err := time.ParseDuration(s)
+		if err != nil {
+			return config.Duration{}, err
+		}
+		return config.Duration{Duration: d}, nil
+	}
+
+	var err error
+	if cfg.Timeout.Connect, err = parseDur(req.Timeout.Connect, 30*time.Second); err != nil {
+		return cfg, fmt.Errorf("invalid timeout.connect: %w", err)
+	}
+	if cfg.Timeout.Call, err = parseDur(req.Timeout.Call, 30*time.Second); err != nil {
+		return cfg, fmt.Errorf("invalid timeout.call: %w", err)
+	}
+
+	cfg.CircuitBreaker.Enabled = req.CircuitBreaker.Enabled
+	cfg.CircuitBreaker.Threshold = req.CircuitBreaker.Threshold
+	if cfg.CircuitBreaker.Threshold == 0 {
+		cfg.CircuitBreaker.Threshold = 5
+	}
+	if cfg.CircuitBreaker.OpenDuration, err = parseDur(req.CircuitBreaker.OpenDuration, 30*time.Second); err != nil {
+		return cfg, fmt.Errorf("invalid circuit_breaker.open_duration: %w", err)
+	}
+
+	return cfg, nil
+}
+
+func serversHandler(ctx context.Context, gw *proxy.Gateway, configPath string, logger *slog.Logger) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		switch r.Method {
+		case http.MethodGet:
+			listServersHandler(w, gw)
+		case http.MethodPost:
+			addServerHandler(w, r, ctx, gw, configPath, logger)
+		default:
+			http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+		}
+	}
+}
+
+func serverByNameHandler(ctx context.Context, gw *proxy.Gateway, configPath string, logger *slog.Logger) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodDelete {
+			http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+			return
+		}
+		name := strings.TrimPrefix(r.URL.Path, "/admin/servers/")
+		if name == "" {
+			http.Error(w, "server name required", http.StatusBadRequest)
+			return
+		}
+		if err := config.PersistRemove(configPath, name); err != nil {
+			http.Error(w, fmt.Sprintf("update config: %s", err), http.StatusInternalServerError)
+			return
+		}
+		if err := gw.RemoveServer(name); err != nil {
+			http.Error(w, err.Error(), http.StatusNotFound)
+			return
+		}
+		logger.Info("server removed", "server", name)
+		w.Header().Set("Content-Type", "application/json")
+		_ = json.NewEncoder(w).Encode(map[string]string{"removed": name})
+	}
+}
+
+func listServersHandler(w http.ResponseWriter, gw *proxy.Gateway) {
+	type serverInfo struct {
+		Status    proxy.ServerStatus     `json:"status"`
+		Tools     []proxy.CapabilityInfo `json:"tools"`
+		Resources []proxy.CapabilityInfo `json:"resources"`
+		Prompts   []proxy.CapabilityInfo `json:"prompts"`
+	}
+
+	statuses := gw.ServerStatuses()
+	tools, resources, prompts := gw.Capabilities()
+
+	out := make(map[string]*serverInfo, len(statuses))
+	for name, st := range statuses {
+		st := st
+		out[name] = &serverInfo{Status: st, Tools: []proxy.CapabilityInfo{}, Resources: []proxy.CapabilityInfo{}, Prompts: []proxy.CapabilityInfo{}}
+	}
+	for _, t := range tools {
+		if s, ok := out[t.Server]; ok {
+			s.Tools = append(s.Tools, t)
+		}
+	}
+	for _, r := range resources {
+		if s, ok := out[r.Server]; ok {
+			s.Resources = append(s.Resources, r)
+		}
+	}
+	for _, p := range prompts {
+		if s, ok := out[p.Server]; ok {
+			s.Prompts = append(s.Prompts, p)
+		}
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	_ = json.NewEncoder(w).Encode(map[string]any{"servers": out})
+}
+
+func addServerHandler(w http.ResponseWriter, r *http.Request, ctx context.Context, gw *proxy.Gateway, configPath string, logger *slog.Logger) {
+	var req serverAddRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		http.Error(w, fmt.Sprintf("invalid JSON: %s", err), http.StatusBadRequest)
+		return
+	}
+	if err := req.validate(); err != nil {
+		http.Error(w, err.Error(), http.StatusBadRequest)
+		return
+	}
+	cfg, err := req.toConfig()
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusBadRequest)
+		return
+	}
+
+	if err := config.PersistAdd(configPath, req.Name, cfg); err != nil {
+		http.Error(w, fmt.Sprintf("update config: %s", err), http.StatusInternalServerError)
+		return
+	}
+
+	tools, resources, prompts, err := gw.AddServer(ctx, req.Name, cfg)
+	if err != nil {
+		// Config was written — roll back to avoid drift
+		_ = config.PersistRemove(configPath, req.Name)
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+	if tools == nil {
+		tools = []proxy.CapabilityInfo{}
+	}
+	if resources == nil {
+		resources = []proxy.CapabilityInfo{}
+	}
+	if prompts == nil {
+		prompts = []proxy.CapabilityInfo{}
+	}
+
+	logger.Info("server added via API", "server", req.Name, "tools", len(tools))
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(http.StatusCreated)
+	_ = json.NewEncoder(w).Encode(map[string]any{
+		"server":    req.Name,
+		"tools":     tools,
+		"resources": resources,
+		"prompts":   prompts,
+	})
 }
 
 func watchSIGHUP(ctx context.Context, configPath string, gateway *proxy.Gateway, logger *slog.Logger) {

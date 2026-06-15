@@ -667,6 +667,59 @@ func toSet(ss []string) map[string]bool {
 	return m
 }
 
+// AddServer dynamically connects a new downstream server and registers its capabilities.
+// Returns the discovered tools, resources, and prompts.
+func (g *Gateway) AddServer(ctx context.Context, name string, cfg config.ServerConfig) (tools, resources, prompts []CapabilityInfo, err error) {
+	g.mu.Lock()
+	defer g.mu.Unlock()
+
+	for _, ds := range g.downstreams {
+		if ds.name == name {
+			return nil, nil, nil, fmt.Errorf("server %q already registered", name)
+		}
+	}
+
+	if err = g.connectOne(ctx, name, cfg); err != nil {
+		return
+	}
+
+	for _, e := range g.registry.AllTools() {
+		if e.ServerName == name {
+			tools = append(tools, CapabilityInfo{Name: e.Tool.Name, Original: e.OriginalName, Server: name, Description: e.Tool.Description})
+		}
+	}
+	for _, e := range g.registry.AllResources() {
+		if e.ServerName == name {
+			resources = append(resources, CapabilityInfo{Name: e.Resource.URI, Server: name})
+		}
+	}
+	for _, e := range g.registry.AllResourceTemplates() {
+		if e.ServerName == name {
+			resources = append(resources, CapabilityInfo{Name: e.Template.URITemplate.Raw(), Server: name})
+		}
+	}
+	for _, e := range g.registry.AllPrompts() {
+		if e.ServerName == name {
+			prompts = append(prompts, CapabilityInfo{Name: e.Prompt.Name, Original: e.OriginalName, Server: name})
+		}
+	}
+	return
+}
+
+// RemoveServer dynamically disconnects a server and deregisters all its capabilities.
+func (g *Gateway) RemoveServer(name string) error {
+	g.mu.Lock()
+	defer g.mu.Unlock()
+
+	for _, ds := range g.downstreams {
+		if ds.name == name {
+			g.removeServer(name, ds)
+			return nil
+		}
+	}
+	return fmt.Errorf("server %q not found", name)
+}
+
 // Close shuts down all downstream client connections.
 func (g *Gateway) Close() {
 	g.mu.Lock()

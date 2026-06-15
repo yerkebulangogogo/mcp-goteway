@@ -60,6 +60,10 @@ func (d *Duration) UnmarshalYAML(value *yaml.Node) error {
 	return nil
 }
 
+func (d Duration) MarshalYAML() (interface{}, error) {
+	return d.String(), nil
+}
+
 type TimeoutConfig struct {
 	// Connect is the deadline for the initial handshake (dial + initialize + list tools/resources/prompts).
 	Connect Duration `yaml:"connect"`
@@ -172,4 +176,33 @@ func Load(path string) (*Config, error) {
 	}
 
 	return &cfg, nil
+}
+
+// PersistAdd adds or replaces a server entry in the config file on disk.
+func PersistAdd(path, name string, cfg ServerConfig) error {
+	existing, err := Load(path)
+	if err != nil {
+		return err
+	}
+	existing.Servers[name] = cfg
+	return writeConfig(path, existing)
+}
+
+// PersistRemove removes a server entry from the config file on disk.
+// Returns nil if the server was not present (nothing to remove).
+func PersistRemove(path, name string) error {
+	existing, err := Load(path)
+	if err != nil {
+		return err
+	}
+	delete(existing.Servers, name)
+	return writeConfig(path, existing)
+}
+
+func writeConfig(path string, cfg *Config) error {
+	data, err := yaml.Marshal(cfg)
+	if err != nil {
+		return fmt.Errorf("marshal config: %w", err)
+	}
+	return os.WriteFile(path, data, 0o644)
 }
