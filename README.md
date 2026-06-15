@@ -431,6 +431,58 @@ curl http://localhost:9090/admin/servers
 
 ---
 
+## Replicas & Sticky Sessions
+
+Run multiple instances of the same MCP server and route each client session to the same instance every time.
+
+```yaml
+servers:
+  context7:
+    type: stdio
+    command: npx
+    args: ["-y", "@upstash/context7-mcp"]
+    replicas: 3          # spin up 3 parallel processes
+    circuit_breaker:
+      enabled: true
+      threshold: 3
+      open_duration: 30s
+```
+
+**How it works:**
+
+- Tools are registered once (`context7__resolve-library-id`, etc.) — clients see no difference
+- Each new SSE session is assigned to an instance via round-robin
+- All subsequent calls from that session go to the same instance (sticky)
+- If the assigned instance's circuit breaker opens, the session is transparently reassigned to the next healthy instance
+- In STDIO mode (single client), replicas has no effect — there's only one session
+
+**Session affinity** is based on the MCP session ID that `mcp-go` sets in the request context for every SSE connection. There is no extra configuration needed — it works automatically.
+
+**Status reflects replica health:**
+
+```bash
+curl http://localhost:9090/healthz
+```
+```json
+{
+  "status": "ok",
+  "servers": {
+    "context7": { "circuit_breaker": "closed", "replicas": 3 }
+  }
+}
+```
+
+Circuit breaker states with replicas:
+| State | Meaning |
+|-------|---------|
+| `closed` | All instances healthy |
+| `degraded` | Some instances down, at least one healthy |
+| `open` | All instances down |
+
+When `degraded`, the gateway keeps routing to healthy instances — clients are unaffected unless all instances go down.
+
+---
+
 ## Tool Filtering
 
 Control exactly which tools from each server are visible to the LLM.

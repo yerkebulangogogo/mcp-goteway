@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	_ "embed"
 	"encoding/json"
 	"errors"
 	"flag"
@@ -11,6 +12,7 @@ import (
 	"os"
 	"os/signal"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"syscall"
 	"time"
@@ -24,6 +26,9 @@ import (
 	"github.com/yerkebulangogogo/mcp-goteway/internal/metrics"
 	"github.com/yerkebulangogogo/mcp-goteway/internal/proxy"
 )
+
+//go:embed dashboard.html
+var dashboardHTML []byte
 
 func main() {
 	configPath := flag.String("config", "config.yaml", "path to config file")
@@ -80,7 +85,7 @@ func main() {
 	gateway.SetMetrics(m)
 
 	if cfg.Admin.Enabled {
-		startAdminServer(ctx, cfg.Admin.Addr, reg, gateway, absConfig, logger)
+		startAdminServer(ctx, cfg.Admin.Addr, reg, gateway, auditLogger, absConfig, logger)
 	}
 
 	logger.Info("connecting to downstream servers", "count", len(cfg.Servers))
@@ -133,13 +138,18 @@ func runSSE(ctx context.Context, cfg config.GatewayConfig, mcpServer *server.MCP
 	}
 }
 
-func startAdminServer(ctx context.Context, addr string, reg *prometheus.Registry, gw *proxy.Gateway, configPath string, logger *slog.Logger) {
+func startAdminServer(ctx context.Context, addr string, reg *prometheus.Registry, gw *proxy.Gateway, al *audit.Logger, configPath string, logger *slog.Logger) {
 	mux := http.NewServeMux()
 	mux.Handle("/metrics", promhttp.HandlerFor(reg, promhttp.HandlerOpts{}))
 	mux.HandleFunc("/healthz", healthHandler(gw))
 	mux.HandleFunc("/capabilities", capabilitiesHandler(gw))
 	mux.HandleFunc("/admin/servers", serversHandler(ctx, gw, configPath, logger))
 	mux.HandleFunc("/admin/servers/", serverByNameHandler(ctx, gw, configPath, logger))
+	mux.HandleFunc("/admin/logs", logsHandler(al))
+	mux.HandleFunc("/dashboard", func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "text/html; charset=utf-8")
+		_, _ = w.Write(dashboardHTML)
+	})
 
 	srv := &http.Server{Addr: addr, Handler: mux}
 	go func() {
@@ -400,6 +410,23 @@ func addServerHandler(w http.ResponseWriter, r *http.Request, ctx context.Contex
 		"resources": resources,
 		"prompts":   prompts,
 	})
+}
+
+func logsHandler(al *audit.Logger) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		limit := 50
+		if v := r.URL.Query().Get("limit"); v != "" {
+			if n, err := strconv.Atoi(v); err == nil && n > 0 {
+				limit = n
+			}
+		}
+		entries := al.Recent(limit)
+		if entries == nil {
+			entries = []audit.LogEntry{}
+		}
+		w.Header().Set("Content-Type", "application/json")
+		_ = json.NewEncoder(w).Encode(map[string]any{"entries": entries})
+	}
 }
 
 func watchSIGHUP(ctx context.Context, configPath string, gateway *proxy.Gateway, logger *slog.Logger) {

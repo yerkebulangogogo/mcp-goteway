@@ -90,8 +90,9 @@ type ServerConfig struct {
 	Command string     `yaml:"command"`
 	Args    []string   `yaml:"args"`
 	Env     []string   `yaml:"env"`
-	URL     string     `yaml:"url"`    // for SSE type
-	Prefix  string     `yaml:"prefix"` // tool/prompt name prefix; defaults to server name
+	URL     string     `yaml:"url"`      // for SSE type
+	Prefix  string     `yaml:"prefix"`   // tool/prompt name prefix; defaults to server name
+	Replicas int       `yaml:"replicas"` // number of parallel instances; default 1
 
 	Timeout        TimeoutConfig        `yaml:"timeout"`
 	CircuitBreaker CircuitBreakerConfig `yaml:"circuit_breaker"`
@@ -154,6 +155,9 @@ func Load(path string) (*Config, error) {
 		}
 		if srv.Type == ServerTypeSSE && srv.URL == "" {
 			return nil, fmt.Errorf("server %q: url is required for sse type", name)
+		}
+		if srv.Replicas < 0 {
+			return nil, fmt.Errorf("server %q: replicas cannot be negative", name)
 		}
 
 		// Timeout defaults

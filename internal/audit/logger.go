@@ -30,14 +30,17 @@ type Entry struct {
 	DurationMS int64
 }
 
-// record is the JSON shape written to the audit log.
-type record struct {
+
+const ringCap = 200 // number of recent entries kept in memory for the dashboard
+
+// LogEntry is the exported JSON-serializable form of an audit record.
+type LogEntry struct {
 	Timestamp  time.Time `json:"ts"`
 	ID         string    `json:"id"`
 	Method     string    `json:"method"`
 	Name       string    `json:"name"`
 	Server     string    `json:"server"`
-	Args       string    `json:"args,omitempty"` // masked JSON string
+	Args       string    `json:"args,omitempty"`
 	Result     string    `json:"result"`
 	Error      string    `json:"error,omitempty"`
 	DurationMS int64     `json:"duration_ms"`
@@ -48,9 +51,12 @@ type record struct {
 type Logger struct {
 	mu     sync.Mutex
 	enc    *json.Encoder
-	masker *Masker  // nil when masking is disabled
+	masker *Masker
 	seq    atomic.Int64
-	closer io.Closer // non-nil when we own the file
+	closer io.Closer
+
+	ringMu sync.RWMutex
+	ring   []LogEntry
 }
 
 // New creates a Logger from config. Returns nil (disabled) when cfg.Enabled is false.
@@ -110,7 +116,7 @@ func (l *Logger) Log(e Entry) {
 		args = l.masker.Mask(args)
 	}
 
-	r := record{
+	entry := LogEntry{
 		Timestamp:  time.Now().UTC(),
 		ID:         id,
 		Method:     e.Method,
@@ -123,8 +129,34 @@ func (l *Logger) Log(e Entry) {
 	}
 
 	l.mu.Lock()
-	_ = l.enc.Encode(r) // Encode writes a single JSON line + newline
+	_ = l.enc.Encode(entry)
 	l.mu.Unlock()
+
+	l.ringMu.Lock()
+	l.ring = append(l.ring, entry)
+	if len(l.ring) > ringCap {
+		l.ring = l.ring[len(l.ring)-ringCap:]
+	}
+	l.ringMu.Unlock()
+}
+
+// Recent returns the last n entries, newest first. Safe to call on a nil Logger.
+func (l *Logger) Recent(n int) []LogEntry {
+	if l == nil {
+		return nil
+	}
+	l.ringMu.RLock()
+	defer l.ringMu.RUnlock()
+
+	src := l.ring
+	if len(src) > n {
+		src = src[len(src)-n:]
+	}
+	out := make([]LogEntry, len(src))
+	for i, e := range src {
+		out[len(src)-1-i] = e // reverse: newest first
+	}
+	return out
 }
 
 // Close flushes and closes the underlying file if the Logger owns it.

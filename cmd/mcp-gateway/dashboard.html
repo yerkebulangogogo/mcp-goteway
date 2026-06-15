@@ -1,0 +1,277 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>MCP Gateway</title>
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+    :root {
+      --bg: #0d1117; --surface: #161b22; --surface2: #1c2128;
+      --border: #30363d; --text: #e6edf3; --muted: #8b949e;
+      --green: #3fb950; --yellow: #e3b341; --red: #f85149; --blue: #58a6ff;
+    }
+    body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; background: var(--bg); color: var(--text); font-size: 14px; min-height: 100vh; }
+
+    /* ── Header ── */
+    header {
+      display: flex; align-items: center; gap: 12px;
+      padding: 13px 24px; background: var(--surface);
+      border-bottom: 1px solid var(--border); position: sticky; top: 0; z-index: 10;
+    }
+    header h1 { font-size: 15px; font-weight: 600; letter-spacing: -0.01em; }
+    .spacer { flex: 1; }
+    #status-badge {
+      font-size: 12px; padding: 2px 10px; border-radius: 10px;
+      border: 1px solid var(--border); background: var(--surface2);
+    }
+    .meta { color: var(--muted); font-size: 12px; }
+    .btn {
+      background: none; border: 1px solid var(--border); color: var(--muted);
+      padding: 4px 12px; border-radius: 6px; cursor: pointer; font-size: 12px;
+      transition: border-color .15s, color .15s;
+    }
+    .btn:hover { border-color: var(--blue); color: var(--text); }
+
+    /* ── Pulse ── */
+    .pulse { display: inline-block; width: 7px; height: 7px; border-radius: 50%; background: var(--green); }
+    .pulse.live { animation: blink 2s ease-in-out infinite; }
+    @keyframes blink { 0%,100%{opacity:1} 50%{opacity:.25} }
+
+    /* ── Layout ── */
+    main { padding: 24px; max-width: 1400px; display: flex; flex-direction: column; gap: 28px; }
+    .section-title {
+      font-size: 11px; font-weight: 600; color: var(--muted);
+      text-transform: uppercase; letter-spacing: .06em; margin-bottom: 12px;
+    }
+
+    /* ── Server cards ── */
+    .cards { display: flex; gap: 12px; flex-wrap: wrap; }
+    .card {
+      background: var(--surface); border: 1px solid var(--border);
+      border-radius: 8px; padding: 14px 16px; min-width: 190px; flex: 0 0 auto;
+    }
+    .card-name { font-weight: 600; font-size: 14px; margin-bottom: 8px; display: flex; align-items: center; gap: 8px; }
+    .badge { font-size: 11px; padding: 1px 7px; border-radius: 10px; background: var(--surface2); color: var(--muted); border: 1px solid var(--border); }
+    .card-cb { font-size: 13px; display: flex; align-items: center; gap: 6px; margin-bottom: 8px; }
+    .card-meta { color: var(--muted); font-size: 12px; line-height: 1.7; }
+
+    /* ── Color utils ── */
+    .c-ok, .c-closed   { color: var(--green); }
+    .c-degraded        { color: var(--yellow); }
+    .c-error, .c-open  { color: var(--red); }
+    .c-timeout, .c-circuit_open { color: var(--yellow); }
+    .c-disabled        { color: var(--muted); }
+
+    .dot { width: 8px; height: 8px; border-radius: 50%; display: inline-block; flex-shrink: 0; }
+    .dot-ok       { background: var(--green); box-shadow: 0 0 5px var(--green); }
+    .dot-degraded { background: var(--yellow); box-shadow: 0 0 5px var(--yellow); }
+    .dot-open     { background: var(--red); box-shadow: 0 0 5px var(--red); }
+    .dot-disabled { background: var(--muted); }
+
+    /* ── Tables ── */
+    .table-wrap { background: var(--surface); border: 1px solid var(--border); border-radius: 8px; overflow: hidden; }
+    table { width: 100%; border-collapse: collapse; font-size: 13px; }
+    thead th {
+      padding: 10px 14px; text-align: left; font-size: 11px; font-weight: 600;
+      color: var(--muted); text-transform: uppercase; letter-spacing: .05em;
+      border-bottom: 1px solid var(--border); white-space: nowrap;
+    }
+    tbody tr { transition: background .1s; }
+    tbody tr:hover { background: rgba(255,255,255,.03); }
+    tbody td { padding: 9px 14px; border-bottom: 1px solid var(--border); vertical-align: middle; }
+    tbody tr:last-child td { border-bottom: none; }
+    .empty { padding: 32px; text-align: center; color: var(--muted); font-size: 13px; }
+
+    code { font-family: "SF Mono", Menlo, monospace; font-size: 12px; background: var(--surface2); padding: 1px 6px; border-radius: 3px; }
+
+    /* ── Tools search ── */
+    .row { display: flex; align-items: center; gap: 12px; margin-bottom: 12px; }
+    input.search {
+      background: var(--surface); border: 1px solid var(--border); color: var(--text);
+      padding: 6px 11px; border-radius: 6px; font-size: 13px; width: 240px; outline: none;
+    }
+    input.search::placeholder { color: var(--muted); }
+    input.search:focus { border-color: var(--blue); }
+
+    /* ── Result chip ── */
+    .chip { font-size: 11px; padding: 2px 8px; border-radius: 10px; font-weight: 500; }
+    .chip-ok      { background: rgba(63,185,80,.15); color: var(--green); }
+    .chip-error   { background: rgba(248,81,73,.15); color: var(--red); }
+    .chip-timeout, .chip-circuit_open { background: rgba(227,179,65,.15); color: var(--yellow); }
+  </style>
+</head>
+<body>
+
+<header>
+  <span class="pulse live" id="pulse"></span>
+  <h1>MCP Gateway</h1>
+  <span id="status-badge">—</span>
+  <div class="spacer"></div>
+  <span class="meta" id="last-updated"></span>
+  <button class="btn" id="pause-btn" onclick="toggleRefresh()">Pause</button>
+</header>
+
+<main>
+
+  <!-- Servers -->
+  <section>
+    <div class="section-title">Servers</div>
+    <div class="cards" id="servers-grid"><div class="empty">Loading…</div></div>
+  </section>
+
+  <!-- Tools -->
+  <section>
+    <div class="row">
+      <div class="section-title" style="margin:0">Tools</div>
+      <input class="search" id="tool-search" placeholder="Search tools…" oninput="filterTools()">
+      <span class="meta" id="tool-count"></span>
+    </div>
+    <div class="table-wrap">
+      <table>
+        <thead><tr><th>Exposed name</th><th>Original</th><th>Server</th><th>Description</th></tr></thead>
+        <tbody id="tools-table"><tr><td colspan="4" class="empty">Loading…</td></tr></tbody>
+      </table>
+    </div>
+  </section>
+
+  <!-- Recent requests -->
+  <section>
+    <div class="section-title">Recent Requests</div>
+    <div class="table-wrap">
+      <table>
+        <thead><tr><th>Time</th><th>Method</th><th>Name</th><th>Server</th><th>Result</th><th>Duration</th><th>Error</th></tr></thead>
+        <tbody id="log-table"><tr><td colspan="7" class="empty">Loading…</td></tr></tbody>
+      </table>
+    </div>
+  </section>
+
+</main>
+
+<script>
+let autoRefresh = true;
+let allTools = [];
+
+function toggleRefresh() {
+  autoRefresh = !autoRefresh;
+  const btn = document.getElementById('pause-btn');
+  const pulse = document.getElementById('pulse');
+  btn.textContent = autoRefresh ? 'Pause' : 'Resume';
+  pulse.classList.toggle('live', autoRefresh);
+}
+
+// ── Data fetching ──────────────────────────────────────────────────────────
+
+async function refresh() {
+  try {
+    const [healthRes, serversRes, logsRes] = await Promise.all([
+      fetch('/healthz'),
+      fetch('/admin/servers'),
+      fetch('/admin/logs?limit=100'),
+    ]);
+    const [health, servers, logs] = await Promise.all([
+      healthRes.json(), serversRes.json(), logsRes.json(),
+    ]);
+
+    renderStatus(health);
+    renderServers(servers.servers || {});
+    renderLogs(logs.entries || []);
+    allTools = [];
+    for (const info of Object.values(servers.servers || {})) {
+      for (const t of (info.tools || [])) allTools.push(t);
+    }
+    filterTools();
+    document.getElementById('last-updated').textContent = 'Updated ' + new Date().toLocaleTimeString();
+  } catch (e) {
+    document.getElementById('status-badge').textContent = 'unreachable';
+    document.getElementById('status-badge').style.color = 'var(--red)';
+  }
+}
+
+// ── Renderers ──────────────────────────────────────────────────────────────
+
+function renderStatus(health) {
+  const badge = document.getElementById('status-badge');
+  const s = health.status || 'unknown';
+  badge.textContent = s;
+  badge.style.color = s === 'ok' ? 'var(--green)' : s === 'degraded' ? 'var(--yellow)' : 'var(--red)';
+}
+
+function dotFor(cb) {
+  const cls = cb === 'closed' ? 'dot-ok' : cb === 'degraded' ? 'dot-degraded' : cb === 'open' ? 'dot-open' : 'dot-disabled';
+  return `<span class="dot ${cls}"></span>`;
+}
+
+function renderServers(servers) {
+  const el = document.getElementById('servers-grid');
+  const entries = Object.entries(servers);
+  if (!entries.length) {
+    el.innerHTML = '<div class="empty">No servers connected</div>';
+    return;
+  }
+  el.innerHTML = entries.map(([name, info]) => {
+    const cb = info.status.circuit_breaker;
+    const cbClass = cb === 'closed' ? 'c-ok' : cb === 'degraded' ? 'c-degraded' : cb === 'open' ? 'c-error' : 'c-disabled';
+    const replicaBadge = info.status.replicas ? `<span class="badge">${info.status.replicas} replicas</span>` : '';
+    return `
+      <div class="card">
+        <div class="card-name">${name}${replicaBadge}</div>
+        <div class="card-cb">${dotFor(cb)}<span class="${cbClass}">${cb}</span></div>
+        <div class="card-meta">
+          ${(info.tools||[]).length} tools<br>
+          ${(info.resources||[]).length} resources &nbsp;·&nbsp; ${(info.prompts||[]).length} prompts
+        </div>
+      </div>`;
+  }).join('');
+}
+
+function filterTools() {
+  const q = document.getElementById('tool-search').value.toLowerCase();
+  const filtered = q
+    ? allTools.filter(t => t.name.toLowerCase().includes(q) || (t.description||'').toLowerCase().includes(q) || (t.server||'').toLowerCase().includes(q))
+    : allTools;
+
+  document.getElementById('tool-count').textContent = filtered.length + ' tool' + (filtered.length !== 1 ? 's' : '');
+
+  const tbody = document.getElementById('tools-table');
+  if (!filtered.length) {
+    tbody.innerHTML = '<tr><td colspan="4" class="empty">No tools found</td></tr>';
+    return;
+  }
+  tbody.innerHTML = filtered.map(t => `
+    <tr>
+      <td><code>${t.name}</code></td>
+      <td style="color:var(--muted)">${t.original || ''}</td>
+      <td><span class="badge">${t.server}</span></td>
+      <td style="color:var(--muted);font-size:12px">${t.description || ''}</td>
+    </tr>`).join('');
+}
+
+function renderLogs(entries) {
+  const tbody = document.getElementById('log-table');
+  if (!entries.length) {
+    tbody.innerHTML = '<tr><td colspan="7" class="empty">No requests yet — make a tool call to see logs here</td></tr>';
+    return;
+  }
+  tbody.innerHTML = entries.map(e => {
+    const t = new Date(e.ts).toLocaleTimeString();
+    const chipCls = 'chip chip-' + (e.result === 'ok' ? 'ok' : e.result.includes('timeout') || e.result.includes('circuit') ? 'timeout' : 'error');
+    return `
+      <tr>
+        <td style="color:var(--muted);font-size:12px;white-space:nowrap">${t}</td>
+        <td style="color:var(--muted);font-size:12px">${e.method}</td>
+        <td><code>${e.name}</code></td>
+        <td><span class="badge">${e.server}</span></td>
+        <td><span class="${chipCls}">${e.result}</span></td>
+        <td style="color:var(--muted);font-size:12px;text-align:right">${e.duration_ms}ms</td>
+        <td style="color:var(--red);font-size:12px;max-width:300px;overflow:hidden;text-overflow:ellipsis">${e.error || ''}</td>
+      </tr>`;
+  }).join('');
+}
+
+// ── Init ───────────────────────────────────────────────────────────────────
+refresh();
+setInterval(() => { if (autoRefresh) refresh(); }, 3000);
+</script>
+</body>
+</html>
