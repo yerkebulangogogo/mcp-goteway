@@ -18,6 +18,7 @@ any MCP client ─────┤                                      ├──
 ## Table of Contents
 
 - [Features](#features)
+- [In Action](#in-action)
 - [Quick Start](#quick-start)
 - [Transport Modes](#transport-modes)
 - [Client Setup](#client-setup)
@@ -50,6 +51,16 @@ any MCP client ─────┤                                      ├──
 | **Audit logging** | Every call logged as NDJSON with built-in PII masking |
 | **Prometheus metrics** | Request counters, latency histograms, circuit breaker state |
 | **macOS service** | One command to install as a launchd service that auto-starts on login |
+
+---
+
+## In Action
+
+The gateway exposes all your MCP servers as a single endpoint. LLM clients see the aggregated tools, call them, and get results — without knowing there are multiple servers behind it:
+
+![Tool call in LM Studio](docs/client-tool-call.png)
+
+![Tool result with context7](docs/client-result.png)
 
 ---
 
@@ -529,7 +540,9 @@ The gateway diffs old vs new config:
 
 ## Admin API Reference
 
-All endpoints are served on the admin port (`:9090` by default).
+All endpoints are served on the admin port (`:9090` by default). Open `http://localhost:9090/dashboard` in a browser for a live view:
+
+![Admin Dashboard](docs/dashboard.png)
 
 | Method | Path | Description |
 |--------|------|-------------|
